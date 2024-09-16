@@ -6,17 +6,17 @@ class LoRASwitcherNode:
     CATEGORY = "oshtz Nodes"
     RETURN_TYPES = ("MODEL", "CLIP")
     FUNCTION = "apply_lora"
+    
+    current_num_loras = 4
 
-    def __init__(self):
-        self.num_loras = 4
-
-    def INPUT_TYPES(self):
+    @classmethod
+    def INPUT_TYPES(cls):
         return {
             "required": {
                 "model": ("MODEL",),
                 "clip": ("CLIP",),
                 "num_loras": ("INT", {
-                    "default": self.num_loras,
+                    "default": cls.current_num_loras,
                     "min": 1,
                     "max": 10,
                     "step": 1
@@ -27,15 +27,19 @@ class LoRASwitcherNode:
                     "max": 10.0,
                     "step": 0.01
                 }),
-                "selected": (["None"] + [f"LoRA {i}" for i in range(1, self.num_loras + 1)],),
-                **update_dynamic_inputs("LORA", self.num_loras, prefix="lora", options=get_lora_list())["required"]
+                "selected": (["None"] + [f"LoRA {i}" for i in range(1, cls.current_num_loras + 1)],),
+                **cls.get_dynamic_lora_inputs()
             }
         }
 
+    @classmethod
+    def get_dynamic_lora_inputs(cls):
+        return update_dynamic_inputs("LORA", cls.current_num_loras, prefix="lora", options=get_lora_list())["required"]
+
     def apply_lora(self, model, clip, num_loras, lora_strength, selected, **kwargs):
-        if num_loras != self.num_loras:
-            self.num_loras = num_loras
-            return {"ui": {"inputs": self.INPUT_TYPES()["required"]}}
+        if num_loras != self.__class__.current_num_loras:
+            self.__class__.current_num_loras = num_loras
+            return {"ui": {"inputs": self.__class__.INPUT_TYPES()["required"]}}
 
         if selected == "None" or lora_strength == 0:
             return (model, clip)
