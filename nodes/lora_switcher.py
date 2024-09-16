@@ -17,37 +17,38 @@ class LoRASwitcherNode:
             "required": {
                 "model": ("MODEL",),
                 "clip": ("CLIP",),
-                "selected": (["None", "LoRA 1", "LoRA 2", "LoRA 3", "LoRA 4"],),
-                "lora_1": (lora_list, ),
-                "lora_2": (lora_list, ),
-                "lora_3": (lora_list, ),
-                "lora_4": (lora_list, ),
+                "num_loras": ("INT", {
+                    "default": 4,
+                    "min": 1,
+                    "max": 10,
+                    "step": 1
+                }),
                 "lora_strength": ("FLOAT", {
                     "default": 1.0,
                     "min": -10.0,
                     "max": 10.0,
                     "step": 0.01
                 }),
+                "selected": (["None"] + [f"LoRA {i+1}" for i in range(10)],),
+            },
+            "optional": {
+                **{f"lora_{i+1}": (lora_list,) for i in range(10)}
             }
         }
 
     RETURN_TYPES = ("MODEL", "CLIP")
     FUNCTION = "apply_lora"
 
-    def apply_lora(self, model, clip, selected, lora_1, lora_2, lora_3, lora_4, lora_strength):
+    def apply_lora(self, model, clip, num_loras, lora_strength, selected, **kwargs):
         if selected == "None" or lora_strength == 0:
             return (model, clip)
 
         # Determine which LoRA to use based on the selection
         lora_name = None
-        if selected == "LoRA 1":
-            lora_name = lora_1
-        elif selected == "LoRA 2":
-            lora_name = lora_2
-        elif selected == "LoRA 3":
-            lora_name = lora_3
-        elif selected == "LoRA 4":
-            lora_name = lora_4
+        for i in range(1, num_loras + 1):
+            if selected == f"LoRA {i}":
+                lora_name = kwargs.get(f"lora_{i}")
+                break
 
         # Check if the selected LoRA is valid
         if lora_name == "None" or not lora_name:
