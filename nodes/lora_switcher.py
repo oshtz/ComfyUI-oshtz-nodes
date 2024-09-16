@@ -1,24 +1,22 @@
 from nodes import LoraLoader
-import folder_paths
+from ..utils import update_dynamic_inputs, get_lora_list
 
 class LoRASwitcherNode:
+    TITLE = "LoRA Switcher"
+    CATEGORY = "oshtz Nodes"
+    RETURN_TYPES = ("MODEL", "CLIP")
+    FUNCTION = "apply_lora"
 
     def __init__(self):
-        pass
+        self.num_loras = 4
 
-    NAME = "LoRA Switcher"
-    TITLE = NAME
-    CATEGORY = "Custom Nodes"
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        lora_list = ['None'] + folder_paths.get_filename_list("loras")
+    def INPUT_TYPES(self):
         return {
             "required": {
                 "model": ("MODEL",),
                 "clip": ("CLIP",),
                 "num_loras": ("INT", {
-                    "default": 4,
+                    "default": self.num_loras,
                     "min": 1,
                     "max": 10,
                     "step": 1
@@ -29,21 +27,16 @@ class LoRASwitcherNode:
                     "max": 10.0,
                     "step": 0.01
                 }),
-            },
-        }
-
-    RETURN_TYPES = ("MODEL", "CLIP")
-    FUNCTION = "apply_lora"
-
-    @classmethod
-    def CONTROLS(cls, num_loras):
-        lora_list = ['None'] + folder_paths.get_filename_list("loras")
-        return {
-            "selected": (["None"] + [f"LoRA {i+1}" for i in range(num_loras)],),
-            **{f"lora_{i+1}": (lora_list,) for i in range(num_loras)}
+                "selected": (["None"] + [f"LoRA {i}" for i in range(1, self.num_loras + 1)],),
+                **update_dynamic_inputs("LORA", self.num_loras, prefix="lora", options=get_lora_list())["required"]
+            }
         }
 
     def apply_lora(self, model, clip, num_loras, lora_strength, selected, **kwargs):
+        if num_loras != self.num_loras:
+            self.num_loras = num_loras
+            return {"ui": {"inputs": self.INPUT_TYPES()["required"]}}
+
         if selected == "None" or lora_strength == 0:
             return (model, clip)
 
@@ -64,3 +57,7 @@ class LoRASwitcherNode:
         )
 
         return (model, clip)
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, num_loras, **kwargs):
+        return update_dynamic_inputs("LORA", num_loras, prefix="lora", options=get_lora_list())
