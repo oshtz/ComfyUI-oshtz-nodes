@@ -29,15 +29,19 @@ class LoRASwitcherNode:
                     "max": 10.0,
                     "step": 0.01
                 }),
-                "selected": (["None"] + [f"LoRA {i+1}" for i in range(10)],),
             },
-            "optional": {
-                **{f"lora_{i+1}": (lora_list,) for i in range(10)}
-            }
         }
 
     RETURN_TYPES = ("MODEL", "CLIP")
     FUNCTION = "apply_lora"
+
+    @classmethod
+    def CONTROLS(cls, num_loras):
+        lora_list = ['None'] + folder_paths.get_filename_list("loras")
+        return {
+            "selected": (["None"] + [f"LoRA {i+1}" for i in range(num_loras)],),
+            **{f"lora_{i+1}": (lora_list,) for i in range(num_loras)}
+        }
 
     def apply_lora(self, model, clip, num_loras, lora_strength, selected, **kwargs):
         if selected == "None" or lora_strength == 0:
