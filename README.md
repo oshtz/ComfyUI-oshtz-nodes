@@ -2,61 +2,46 @@
 Custom nodes for ComfyUI created for some of my workflows.
 
 ### LLM All-in-One Node
-- Support for multiple LLMs:
-  - OpenAI GPT models
-  - Anthropic Claude models
-  - AWS Bedrock integration
-- Image-to-text capabilities with compatible models
-- Adjustable parameters for temperature and token limits
-- Multi-line prompt support
+Connect your workflows to powerful language models:
+- OpenAI GPT models
+- Anthropic Claude models
+- AWS Bedrock integration
+- Image-to-text capabilities
+- Adjustable temperature and token limits
 
 ### String Splitter Node
-- Split a single input string into up to 10 separate outputs
-- Configurable separator (default: comma)
-- Perfect for:
-  - Parsing comma-separated values
-  - Breaking down prompt lists
-  - Splitting text for batch processing
-- Each output can be individually connected to other nodes
-- Empty outputs are handled gracefully with blank strings
-- Multiline text support
+Split text into multiple outputs:
+- Up to 10 separate outputs
+- Customizable separator (default: comma)
+- Handles empty values gracefully
+- Ideal for:
+  - CSV parsing
+  - Prompt lists
+  - Batch processing
 
 ### LoRA Switcher Node
-- Easily switch between up to 10 different LoRA models in your workflow
-- Adjust LoRA strength with fine-grained control (-10.0 to 10.0)
-- Compatible with all standard LoRA models
-- Seamless integration with existing ComfyUI workflows
+Manage multiple LoRA models efficiently:
+- Switch between up to 10 different LoRA models
+- Fine-tune strength (-10.0 to 10.0)
+- Compatible with standard LoRA models
+- Seamless ComfyUI integration
 
-### Image Overlay Node (Work in Progress 🚧)
-- Combine two images with overlay capabilities
+### Image Overlay Node (Beta 🚧)
+Combine images with precision:
 
-#### Current Functionality
-- Basic image compositing with:
-  - Position control (X/Y coordinates)
-  - Adjustable transparency (alpha: 0.0 - 1.0)
-  - Automatic size matching of overlay to base image
-  - Alpha channel support (RGBA conversion)
-  - Transparent background handling
+**Current Features**
+- Basic image compositing
+- Position control (X/Y)
+- Transparency adjustment
+- Auto size matching
+- Alpha channel support
 
-#### Planned Features
-- Advanced positioning options:
-  - Relative positioning (percentage-based)
-  - Negative coordinates support
-  - Anchor point selection (center, corners, etc.)
-- Transform controls:
-  - Scale/resize options
-  - Rotation
-  - Maintain aspect ratio option
-- Advanced compositing:
-  - Multiple blending modes (multiply, screen, overlay, etc.)
-  - Multiple layer support
-  - Masking capabilities
-- Quality of life improvements:
-  - Preview window
-  - Interactive positioning
-  - Preset positions (center, corners, etc.)
-
-> ⚠️ Note: This node is in early development. Features and interface may change significantly in future updates.
+**Coming Soon**
+- Advanced positioning
+- Transform controls
+- Multiple blend modes
+- Layer management
+- Interactive preview
 
 ## Installation
 
