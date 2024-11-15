@@ -2,29 +2,19 @@
 Custom nodes for ComfyUI created for some of my workflows.
 
 ### LLM All-in-One Node
-Connect your workflows to powerful language models:
-- OpenAI GPT models
-- Anthropic Claude models
-- AWS Bedrock integration
+Easy GPT/Claude integration in ComfyUI:
+- OpenAI & Anthropic models
 - Image-to-text capabilities
-- Adjustable temperature and token limits
 
 ### String Splitter Node
 Split text into multiple outputs:
 - Up to 10 separate outputs
-- Customizable separator (default: comma)
-- Handles empty values gracefully
-- Ideal for:
-  - CSV parsing
-  - Prompt lists
-  - Batch processing
+- Customizable separator
 
 ### LoRA Switcher Node
-Manage multiple LoRA models efficiently:
-- Switch between up to 10 different LoRA models
-- Fine-tune strength (-10.0 to 10.0)
-- Compatible with standard LoRA models
-- Seamless ComfyUI integration
+Efficient LoRA switch made for API use:
+- Switch between up to 40 LoRAs in a single node (10, 20, 40)
+- Fine-tune strength
 
 ### Image Overlay Node (Beta 🚧)
 Combine images with precision:
