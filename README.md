@@ -5,6 +5,12 @@ Custom nodes for ComfyUI created for some of my workflows.
 Easy GPT/Claude integration in ComfyUI:
 - OpenAI & Anthropic models
 - Image-to-text capabilities
+<div style="display: flex; align-items: center; justify-content: space-between;">
+  <img src="https://github.com/oshtz/ComfyUI-oshtz-nodes/blob/main/examples/prompt_enhancer.jpg?raw=true" alt="alt text" height="250"/>
+  <a href="https://youtu.be/T-D1KVIuvjA">
+    <img src="https://img.youtube.com/vi/0KZ7sMd4jUo/maxresdefault.jpg" alt="Watch the video" height="250"/>
+  </a>
+</div>
 
 ### String Splitter Node
 Split text into multiple outputs:
