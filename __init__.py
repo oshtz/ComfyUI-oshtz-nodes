@@ -9,6 +9,7 @@ else:
     from .nodes.llm_aio import LLMAIONode
     from .nodes.image_overlay import ImageOverlayNode
     from .nodes.string_splitter import StringSplitterNode
+    from .nodes.aspect_ratio import EasyAspectRatioNode
 
     NODE_CLASS_MAPPINGS = {
         "LoRASwitcherNode": LoRASwitcherNode,
@@ -16,7 +17,8 @@ else:
         "LoRASwitcherNode40": LoRASwitcherNode40,
         "LLMAIONode": LLMAIONode,
         "ImageOverlayNode": ImageOverlayNode,
-        "StringSplitterNode": StringSplitterNode
+        "StringSplitterNode": StringSplitterNode,
+        "EasyAspectRatioNode": EasyAspectRatioNode
     }
 
     NODE_DISPLAY_NAME_MAPPINGS = {
@@ -25,7 +27,8 @@ else:
         "LoRASwitcherNode40": LoRASwitcherNode40.TITLE,
         "LLMAIONode": LLMAIONode.TITLE,
         "ImageOverlayNode": ImageOverlayNode.TITLE,
-        "StringSplitterNode": StringSplitterNode.TITLE
+        "StringSplitterNode": StringSplitterNode.TITLE,
+        "EasyAspectRatioNode": EasyAspectRatioNode.TITLE
     }
 
     __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
