@@ -71,9 +71,27 @@ class LLMMessage(BaseModel):
                 "role": self.role,
                 "content": content[0]["text"]
             }
+
+        # Reformat content for OpenAI API
+        openai_content = []
+        for item in content:
+            if item.get("type") == "image" and "source" in item:
+                source = item["source"]
+                if source.get("type") == "base64":
+                    openai_content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{source.get('media_type', 'image/png')};base64,{source.get('data', '')}",
+                            "detail": "auto" # Default detail level
+                        }
+                    })
+            elif item.get("type") == "text":
+                openai_content.append(item)
+            # Add handling for other types if necessary, or ignore them
+
         return {
             "role": self.role,
-            "content": content
+            "content": openai_content
         }
 
     def to_claude_message(self):
