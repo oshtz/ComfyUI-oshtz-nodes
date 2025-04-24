@@ -1,6 +1,7 @@
-from nodes import LoraLoader
 import folder_paths
+from nodes import LoraLoader
 
+# Original LoRA Switcher Node
 class LoRASwitcherNode:
     TITLE = "LoRA Switcher"
     CATEGORY = "oshtz Nodes"

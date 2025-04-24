@@ -1,0 +1,27 @@
+/* Style combo boxes */
+.litegraph .widget select {
+    background-color: #353535 !important;
+    color: #DDD !important;
+    border: 1px solid #666 !important;
+}
+
+/* Style number inputs */
+.litegraph .widget input[type=number] {
+    background-color: #353535 !important;
+    color: #DDD !important;
+    border: 1px solid #666 !important;
+}
+
+/* Style buttons */
+.litegraph .widget button {
+    background-color: #4CAF50 !important;
+    color: #FFFFFF !important;
+    border: 1px solid #666 !important;
+}
+
+/* Style remove buttons specifically */
+.litegraph .widget button[label*="Remove"],
+.litegraph .widget button[name*="_remove"] {
+    background-color: #F44336 !important;
+    color: #FFFFFF !important;
+}
