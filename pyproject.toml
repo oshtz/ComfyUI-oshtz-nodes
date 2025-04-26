@@ -1,8 +1,8 @@
 # pyproject.toml
 [project]
 name = "comfyui-oshtz-nodes"
-description = "Custom ComfyUI nodes including LLM integration, LoRA switchers, image tools, and more"
-version = "1.0.0"
+description = "Custom ComfyUI nodes including LLM integration, GPT Image 1, LoRA switchers, aspect ratio helper, image tools, and more"
+version = "1.1.0"
 license = { file = "LICENSE.txt" }
 dependencies = [
     "requests",
@@ -18,4 +18,4 @@ Repository = "https://github.com/oshtz/ComfyUI-oshtz-nodes"
 [tool.comfy]
 PublisherId = "oshtz"
 DisplayName = "oshtz Nodes"
-Icon = "https://raw.githubusercontent.com/oshtz/ComfyUI-oshtz-nodes/main/examples/prompt_enhancer.jpg"
+Icon = "https://github.com/oshtz.png"
