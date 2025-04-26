@@ -2,452 +2,571 @@ import { app } from "../../../../scripts/app.js";
 import { $el } from "../../../../scripts/ui.js";
 import { api } from "../../../../scripts/api.js";
 
-const DEFAULT_LORA_WIDGET_DATA = {
-    lora: "None",
-    strength: 1.0,
-};
+// Store the app instance
+let OshtzApp = null;
 
-const LORA_SWITCHER_STYLE = {
-    rowBackgroundColor: null,
-    widgetOutlineColor: LiteGraph.WIDGET_OUTLINE_COLOR,
-    combo: {
-        backgroundColor: "#353535",
-        textColor: "#DDD",
-        arrowColor: "#AAA",
-    },
-    number: {
-        backgroundColor: "#353535",
-        textColor: "#DDD",
-    },
-    removeButton: {
-        backgroundColor: "#F44336",
-        textColor: "#FFFFFF",
-        outlineColor: LiteGraph.WIDGET_OUTLINE_COLOR,
-    },
-    addButton: {
-        backgroundColor: "#4CAF50",
-        textColor: "#FFFFFF",
-        outlineColor: LiteGraph.WIDGET_OUTLINE_COLOR,
-    }
-};
+// Store fetched LoRA names
+let LORA_NAMES = ["None"];
 
-if (!window.LiteGraph) window.LiteGraph = {};
-
-
-
-// Patch LiteGraph to force widget draw calls
-function patchLiteGraphWidgetDraw() {
-    if (LiteGraph._oshtz_widget_draw_patched) return;
-    LiteGraph._oshtz_widget_draw_patched = true;
-
-    const originalDrawNodeWidgets = LiteGraph.drawNodeWidgets;
-    LiteGraph.drawNodeWidgets = function(node, ctx, posY) {
-        const res = originalDrawNodeWidgets.call(this, node, ctx, posY);
-        if (!node.widgets) return res;
-        for (const widget of node.widgets) {
-            if (typeof widget.draw === "function") {
-                try {
-                    widget.draw(ctx, node, node.size[0], widget.last_y ?? 0, widget.size ? widget.size[1] : LiteGraph.NODE_WIDGET_HEIGHT);
-                } catch (e) {
-                    console.warn("Widget draw error", e);
-                }
-            }
-        }
-        return res;
-    };
-}
-
-patchLiteGraphWidgetDraw();
-
-async function patchLoraSwitcherDynamic(nodeType) {
-    if (!nodeType || nodeType.prototype._oshtz_patched) return;
-    console.log("[LoraSwitcherDynamic] Patch applied");
-    nodeType.prototype._oshtz_patched = true;
-
-    const onNodeCreated = nodeType.prototype.onNodeCreated;
-    const onConfigure = nodeType.prototype.configure;
-    const onExecute = nodeType.prototype.onExecute;
-    const onDrawForegroundOriginal = nodeType.prototype.onDrawForeground;
-
-    nodeType.prototype.onNodeCreated = function() {
-        onNodeCreated?.apply(this, arguments);
-        this.lora_count = 0;
-
-        const addLoraButton = this.addWidget("button", "+ Add LoRA", null, () => this.addLoraWidgets());
-        addLoraButton.draw = function(ctx, node, widget_width, y, widget_height) {
-            const margin = 10;
-            const styles = LORA_SWITCHER_STYLE.addButton;
-            const outline_color = styles.outlineColor;
-            const background_color = styles.backgroundColor;
-            const text_color = styles.textColor;
-            const text = this.label || this.name;
-            const pos = this.pos || [margin, y];
-            const size = this.size || [widget_width - margin * 2, widget_height];
-            const button_bounding = [pos[0], pos[1], size[0], size[1]];
-
-            ctx.fillStyle = background_color;
-            ctx.fillRect(...button_bounding);
-            ctx.strokeStyle = outline_color;
-            ctx.strokeRect(...button_bounding);
-
-            if (text) {
-                ctx.fillStyle = text_color;
-                ctx.textAlign = "center";
-                ctx.font = node.canvas.button_font || "14px Arial";
-                ctx.fillText(text, pos[0] + size[0] * 0.5, pos[1] + size[1] * 0.7);
-            }
-        };
-        this.widgets_values = this.widgets_values || [];
-    };
-
-    nodeType.prototype.computeSize = function(out) {
-        let width = LiteGraph.NODE_WIDTH;
-        let height = LiteGraph.NODE_TITLE_HEIGHT;
-        let widgets_height = 0;
-        let maxWidgetWidth = 0;
-        const loraRowPadding = 5;
-
-        if (this.widgets && this.widgets.length > 0) {
-            for (let i = 0; i < this.widgets.length; ++i) {
-                const widget = this.widgets[i];
-                if (widget.name && widget.name.endsWith("_num")) continue;
-
-                let widgetHeight = 0;
-                let widgetWidth = 0;
-
-                if (widget.computeSize) {
-                    const computed = widget.computeSize(this.size ? this.size[0] : width);
-                    widgetWidth = computed[0];
-                    widgetHeight = computed[1];
-                } else {
-                    widgetHeight = LiteGraph.NODE_WIDGET_HEIGHT;
-                    widgetWidth = this.size ? this.size[0] : width;
-                }
-
-                widgets_height += widgetHeight + LiteGraph.NODE_WIDGET_PADDING;
-
-                if (widget.name && widget.name.endsWith("_remove")) {
-                    widgets_height += loraRowPadding;
-                }
-                maxWidgetWidth = Math.max(maxWidgetWidth, widgetWidth);
-            }
-            if (widgets_height > 0) {
-                widgets_height += LiteGraph.NODE_WIDGET_PADDING;
-            }
-        }
-
-        height += widgets_height;
-
-        const inputsHeight = this.inputs ? this.inputs.length * LiteGraph.NODE_SLOT_HEIGHT : 0;
-        const outputsHeight = this.outputs ? this.outputs.length * LiteGraph.NODE_SLOT_HEIGHT : 0;
-        height = Math.max(height, inputsHeight + LiteGraph.NODE_TITLE_HEIGHT);
-        height = Math.max(height, outputsHeight + LiteGraph.NODE_TITLE_HEIGHT);
-        height += LiteGraph.NODE_TITLE_HEIGHT * 0.5;
-        width = Math.max(width, maxWidgetWidth);
-        width = isFinite(width) ? width : LiteGraph.NODE_WIDTH;
-        height = isFinite(height) ? height : 100;
-
-        const finalSize = [width, height];
-        if (out) {
-            out[0] = finalSize[0];
-            out[1] = finalSize[1];
-        }
-        return finalSize;
-    };
-
-    nodeType.prototype.configure = async function(info) {
-        this.widgets = this.widgets?.filter(w => !w.name || (!w.name.startsWith("lora_") && w.name !== "+ Add LoRA")) || [];
-        this.lora_count = 0;
-
-        onConfigure?.apply(this, arguments);
-
-        if (!this.widgets.find(w => w.name === "+ Add LoRA")) {
-            this.addWidget("button", "+ Add LoRA", null, () => this.addLoraWidgets());
-        }
-
-        const loraValuesToRestore = info.widgets_values || [];
-        if (loraValuesToRestore.length > 0) {
-            console.log("[LoraSwitcherDynamic] Restoring LoRA widgets from widgets_values:", loraValuesToRestore);
-            await Promise.all(loraValuesToRestore.map(loraData => {
-                if (typeof loraData === 'object' && loraData !== null && 'lora' in loraData && 'strength' in loraData) {
-                    return this.addLoraWidgets(loraData);
-                } else {
-                    console.warn("[LoraSwitcherDynamic] Skipping invalid saved LoRA data during configure:", loraData);
-                    return Promise.resolve();
-                }
-            }));
-        } else {
-            console.log("[LoraSwitcherDynamic] No valid widgets_values found to restore LoRAs during configure.");
-        }
-        this.setDirtyCanvas(true, true);
-    };
-
-    nodeType.prototype.addLoraWidgets = async function(initialValue = null) {
-        this.lora_count++;
-        const index = this.lora_count;
-        const prefix = `lora_${index}`;
-        const defaultValue = initialValue || { ...DEFAULT_LORA_WIDGET_DATA };
-
-        let lora_names = ["None"];
-        try {
-            const response = await api.fetchApi("/oshtz-nodes/get-loras");
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const custom_loras = await response.json();
-            if (!custom_loras.includes("None")) {
-                lora_names = ["None", ...custom_loras];
+// Fetch LoRA names from the custom endpoint
+async function fetchLoraNames() {
+    try {
+        const response = await api.fetchApi("/oshtz-nodes/get-loras");
+        if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+                LORA_NAMES = data;
             } else {
-                lora_names = custom_loras;
+                console.error("[LoraSwitcherDynamic] Fetched LoRA list is invalid:", data);
+                LORA_NAMES = ["None", "ERROR: Fetch Failed"];
             }
-            console.log("[LoraSwitcherDynamic] Fetched LoRAs via custom /oshtz-nodes/get-loras");
-        } catch (error) {
-            console.error("[LoraSwitcherDynamic] Failed to fetch LoRA names via custom endpoint:", error);
-        }
-
-        const nameWidget = this.addWidget(
-            "combo", `${prefix}_name`, defaultValue.lora, (value) => {},
-            { values: lora_names, serialize: false }
-        );
-        if (!lora_names.includes(defaultValue.lora)) nameWidget.value = "None";
-        nameWidget.draw = function(ctx, node, widget_width, y, widget_height) {
-            const styles = LORA_SWITCHER_STYLE.combo;
-            const outline_color = LORA_SWITCHER_STYLE.widgetOutlineColor;
-            const bounds = [this.pos[0], this.pos[1], this.size[0], this.size[1]];
-
-            ctx.fillStyle = styles.backgroundColor;
-            ctx.fillRect(...bounds);
-            ctx.strokeStyle = outline_color;
-            ctx.strokeRect(...bounds);
-
-            ctx.fillStyle = styles.textColor;
-            ctx.textAlign = "left";
-            ctx.font = node.canvas.button_font || "14px Arial";
-            const text_offset_x = 5;
-            ctx.fillText(this.value, bounds[0] + text_offset_x, bounds[1] + widget_height * 0.7);
-        };
-
-        const strengthWidget = this.addWidget("number", `${prefix}_strength`, defaultValue.strength, (v) => {}, {
-            min: -10.0, max: 10.0, step: 0.01, precision: 2, serialize: true
-        });
-        strengthWidget.draw = function(ctx, node, widget_width, y, widget_height) {
-            const styles = LORA_SWITCHER_STYLE.number;
-            const outline_color = LORA_SWITCHER_STYLE.widgetOutlineColor;
-            const bounds = [this.pos[0], this.pos[1], this.size[0], this.size[1]];
-
-            ctx.fillStyle = styles.backgroundColor;
-            ctx.fillRect(...bounds);
-            ctx.strokeStyle = outline_color;
-            ctx.strokeRect(...bounds);
-
-            ctx.fillStyle = styles.textColor;
-            ctx.textAlign = "center";
-            ctx.font = node.canvas.button_font || "14px Arial";
-            ctx.fillText(this.value.toFixed(this.options.precision || 2), bounds[0] + bounds[2] * 0.5, bounds[1] + widget_height * 0.7);
-        };
-
-        const removeWidget = this.addWidget("button", `${prefix}_remove`, `Remove LoRA ${index}`, () => {
-            this.removeLoraWidget(index);
-        }, { serialize: false });
-        removeWidget.draw = function(ctx, node, widget_width, y, widget_height) {
-            const styles = LORA_SWITCHER_STYLE.removeButton;
-            const outline_color = styles.outlineColor;
-            const background_color = styles.backgroundColor;
-            const text_color = styles.textColor;
-            const text = this.label || this.name;
-            const bounds = [this.pos[0], this.pos[1], this.size[0], this.size[1]];
-
-            ctx.fillStyle = background_color;
-            ctx.fillRect(...bounds);
-            ctx.strokeStyle = outline_color;
-            ctx.strokeRect(...bounds);
-
-            if (text) {
-                ctx.fillStyle = text_color;
-                ctx.textAlign = "center";
-                ctx.font = node.canvas.button_font || "14px Arial";
-                ctx.fillText(text, bounds[0] + bounds[2] * 0.5, bounds[1] + bounds[3] * 0.7);
-            }
-        };
-
-        const buttonIndex = this.widgets.findIndex(w => w.name === "+ Add LoRA");
-        const insertIndex = (buttonIndex === -1) ? this.widgets.length : buttonIndex;
-        const addedWidgets = [nameWidget, strengthWidget, removeWidget];
-        const currentIndices = addedWidgets.map(w => this.widgets.indexOf(w)).filter(i => i !== -1).sort((a, b) => a - b);
-
-        if (currentIndices.length === addedWidgets.length && currentIndices[0] >= insertIndex) {
-            for (let i = addedWidgets.length - 1; i >= 0; i--) {
-                const widgetToRemove = addedWidgets[i];
-                const idxToRemove = this.widgets.indexOf(widgetToRemove);
-                if (idxToRemove !== -1) this.widgets.splice(idxToRemove, 1);
-            }
-            this.widgets.splice(insertIndex, 0, ...addedWidgets);
-        } else if (currentIndices.length !== addedWidgets.length) {
-            console.error("[LoraSwitcherDynamic] Error finding newly added widgets to move them.");
-            this.widgets = this.widgets.filter(w => !addedWidgets.includes(w));
-            this.widgets.splice(insertIndex, 0, ...addedWidgets);
-        }
-        this.updateWidgetsValues?.();
-        this.setDirtyCanvas(true, true);
-    };
-
-    nodeType.prototype.removeLoraWidget = function(indexToRemove) {
-        const prefix = `lora_${indexToRemove}`;
-        const widgetsToRemove = this.widgets.filter(w => w.name && w.name.startsWith(prefix) && !w.name.endsWith("_num"));
-        if (widgetsToRemove.length > 0) {
-            this.widgets = this.widgets.filter(w => !widgetsToRemove.includes(w));
-            this.renumberLoraWidgets();
-            this.updateWidgetsValues?.();
-            this.setDirtyCanvas(true, true);
         } else {
-            console.warn(`[LoraSwitcherDynamic] Could not find widgets to remove for index ${indexToRemove}`);
+            console.error("[LoraSwitcherDynamic] Failed to fetch LoRA list:", response.status, response.statusText);
+            LORA_NAMES = ["None", `ERROR: ${response.status}`];
         }
-    };
-
-    nodeType.prototype.renumberLoraWidgets = function() {
-        let currentLoraIndex = 1;
-        const loraWidgetGroups = {};
-
-        this.widgets.forEach(widget => {
-            if (widget.name && widget.name.startsWith("lora_")) {
-                const parts = widget.name.split('_');
-                if (parts.length >= 3) {
-                    const index = parseInt(parts[1], 10);
-                    const type = parts.slice(2).join('_');
-                    if (!isNaN(index) && type && type !== 'num') {
-                        if (!loraWidgetGroups[index]) loraWidgetGroups[index] = {};
-                        loraWidgetGroups[index][type] = widget;
-    nodeType.prototype.updateWidgetsValues = function() {
-        const loraData = [];
-        for (let i = 1; i <= this.lora_count; i++) {
-            const nameWidget = this.widgets.find(w => w.name === `lora_${i}_name`);
-            const strengthWidget = this.widgets.find(w => w.name === `lora_${i}_strength`);
-            if (nameWidget && strengthWidget) {
-                loraData.push({ lora: nameWidget.value || "None", strength: strengthWidget.value });
-            }
-        }
-        this.widgets_values = loraData;
-        console.log("[LoraSwitcherDynamic] widgets_values updated:", JSON.stringify(this.widgets_values));
-    };
-}
-                }
-            }
-        });
-
-        const sortedIndices = Object.keys(loraWidgetGroups).map(Number).sort((a, b) => a - b);
-        sortedIndices.forEach(originalIndex => {
-            const group = loraWidgetGroups[originalIndex];
-            const newPrefix = `lora_${currentLoraIndex}`;
-            const newIndex = currentLoraIndex;
-
-            if (group.name) group.name.name = `${newPrefix}_name`;
-            if (group.strength) group.strength.name = `${newPrefix}_strength`;
-            if (group.remove) {
-                group.remove.name = `${newPrefix}_remove`;
-                group.remove.callback = () => { this.removeLoraWidget(newIndex); };
-            }
-            currentLoraIndex++;
-        });
-        this.lora_count = currentLoraIndex - 1;
-    };
-
-    nodeType.prototype.onExecute = function() {
-        const loraData = [];
-        for (let i = 1; i <= this.lora_count; i++) {
-            const nameWidget = this.widgets.find(w => w.name === `lora_${i}_name`);
-            const strengthWidget = this.widgets.find(w => w.name === `lora_${i}_strength`);
-            if (nameWidget && strengthWidget) {
-                loraData.push({ lora: nameWidget.value || "None", strength: strengthWidget.value });
-            }
-        }
-        this.widgets_values = loraData;
-        console.log("[LoraSwitcherDynamic] Data being set in onExecute:", JSON.stringify(this.widgets_values));
-        return onExecute?.apply(this, arguments);
-    };
-
-    nodeType.prototype.onDrawForeground = function(ctx) {
-        onDrawForegroundOriginal?.apply(this, arguments);
-        if (!this.widgets) return;
-
-        const activeIndexWidget = this.widgets.find(w => w.name === "active_index");
-        const widgetHeight = LiteGraph.NODE_WIDGET_HEIGHT;
-        const standardPadding = LiteGraph.NODE_WIDGET_PADDING;
-        let rowStartY = LiteGraph.NODE_TITLE_HEIGHT + standardPadding;
-
-        if (activeIndexWidget) {
-            activeIndexWidget.last_y = rowStartY;
-            rowStartY += (activeIndexWidget.computeSize ? activeIndexWidget.computeSize()[1] : widgetHeight) + standardPadding;
-        }
-
-        const loraRowPadding = 5;
-        const rowTotalHeight = widgetHeight + standardPadding + loraRowPadding;
-        const nodeWidth = this.size[0];
-        const margin = 10;
-        const spacing = 5;
-        const removeWidth = 60;
-        const strengthWidth = 60;
-        const nameWidth = nodeWidth - margin * 2 - strengthWidth - removeWidth - spacing * 2;
-
-        let currentY = rowStartY;
-        let currentLoraIndex = 1;
-        let lastLoraWidgetY = 0;
-
-        while (true) {
-            const prefix = `lora_${currentLoraIndex}`;
-            const nameWidget = this.widgets.find(w => w.name === `${prefix}_name`);
-            const strengthWidget = this.widgets.find(w => w.name === `${prefix}_strength`);
-            const removeWidget = this.widgets.find(w => w.name === `${prefix}_remove`);
-
-            if (!nameWidget || !strengthWidget || !removeWidget) break;
-
-            let currentX = margin;
-
-            nameWidget.last_y = currentY;
-            nameWidget.pos = [currentX, currentY];
-            nameWidget.size = [nameWidth, widgetHeight];
-            currentX += nameWidth + spacing;
-
-            strengthWidget.last_y = currentY;
-            strengthWidget.pos = [currentX, currentY];
-            strengthWidget.size = [strengthWidth, widgetHeight];
-            currentX += strengthWidth + spacing;
-
-            removeWidget.last_y = currentY;
-            removeWidget.pos = [currentX, currentY];
-            removeWidget.size = [removeWidth, widgetHeight];
-
-            lastLoraWidgetY = currentY;
-            currentY += rowTotalHeight;
-            currentLoraIndex++;
-        }
-
-        const addButton = this.widgets.find(w => w.name === "+ Add LoRA");
-        if (addButton) {
-            const buttonY = (lastLoraWidgetY > 0) ? lastLoraWidgetY + rowTotalHeight : rowStartY;
-            addButton.last_y = buttonY;
-            addButton.pos = [margin, buttonY];
-            addButton.size = [nodeWidth - margin * 2, widgetHeight];
-        }
-    };
-
-    const originalSerialize = nodeType.prototype.serialize;
-    nodeType.prototype.serialize = function() {
-        const info = originalSerialize ? originalSerialize.call(this) : {};
-        info.widgets_values = this.widgets_values || [];
-        return info;
-    };
+    } catch (error) {
+        console.error("[LoraSwitcherDynamic] Error fetching LoRA list:", error);
+        LORA_NAMES = ["None", "ERROR: Network Error"];
+    }
+    return LORA_NAMES;
 }
 
-// Immediately patch if node already registered
-const existing = LiteGraph.registered_node_types?.["oshtz Nodes/LoraSwitcherDynamic"];
-if (existing) {
-    patchLoraSwitcherDynamic(existing);
-}
+// Helper to get the current LoRA config from custom widgets
+function getLoraConfigFromWidgets(node) {
+    const config = [];
+    if (!node.widgets) return config;
 
-// Register extension to patch when node is registered
-app.registerExtension({
-    name: "OshtzNodes.LoraSwitcherDynamic",
-    async beforeRegisterNodeDef(nodeType, nodeData, appRef) {
-        if (nodeData.name === "LoraSwitcherDynamic") {
-            patchLoraSwitcherDynamic(nodeType);
+    const rowWidgets = node.widgets.filter(w => w.name?.startsWith("lora_row_"));
+
+    // Sort by index stored in the widget's value
+    rowWidgets.sort((a, b) => (a.value?.index ?? 0) - (b.value?.index ?? 0));
+
+    for (const widget of rowWidgets) {
+        if (widget.value && typeof widget.value === 'object') {
+            config.push({
+                lora: widget.value.lora,
+                strength: widget.value.strength
+            });
         }
     }
+    return config;
+}
+
+// Helper function to find the hidden config input/widget more reliably
+function findHiddenConfigWidget(node) {
+    // 1. Check node.properties first (Common for hidden/internal data)
+    if (node.properties && node.properties.hasOwnProperty("lora_config")) {
+            // Return a mock widget object that interacts with node.properties
+            return {
+            name: "lora_config",
+            type: "HIDDEN_PROPERTY", // Custom type to indicate source
+            _node: node, // Store reference to the node
+            get value() {
+                return this._node.properties["lora_config"];
+            },
+            set value(newValue) {
+                this._node.properties["lora_config"] = newValue;
+                // Optionally trigger serialization or update if needed
+                // node.setDirtyCanvas(true, true); // Example: Mark canvas dirty
+            },
+            // Add other methods/properties if needed by the caller, e.g., serializeValue
+            serializeValue: function() {
+                return this.value;
+            }
+        };
+    }
+
+    // 2. Check widgets array directly by name (Original Step 1)
+    let configWidget = node.widgets?.find((w) => w.name === "lora_config");
+    if (configWidget) {
+        return configWidget;
+    }
+
+    // 3. Check if it's represented as an input link (Original Step 2)
+    const configInput = node.inputs?.find((i) => i.name === "lora_config");
+    if (configInput) {
+        // If linked, the widget might still be in node.widgets, find by name again or linked widget name
+        configWidget = node.widgets?.find((w) => w.name === "lora_config" || (configInput.widget && w.name === configInput.widget.name));
+        if (configWidget) {
+            return configWidget;
+        }
+    }
+
+    // 4. Final check: Find any widget named "lora_config" (Original Step 3)
+    configWidget = node.widgets?.find((w) => w.name === "lora_config");
+    if (configWidget) {
+        return configWidget;
+    }
+
+    // 5. Check specifically for a widget of type 'hidden' (less common but possible)
+    configWidget = node.widgets?.find((w) => w.type?.toLowerCase() === "hidden" && w.name === "lora_config");
+    if (configWidget) {
+        return configWidget;
+    }
+
+    // If not found after all checks, log and return null
+    console.error("[LoraSwitcherDynamic] findHiddenConfigWidget could not find the 'lora_config' widget/property."); // Use error log
+    return null;
+}
+
+// Helper to update the hidden config input
+function updateHiddenConfig(node) {
+    const config = getLoraConfigFromWidgets(node);
+    const jsonConfig = JSON.stringify(config);
+    
+    try {
+        // CRITICAL: Update BOTH property and widget as both are used in different scenarios
+        
+        // 1. Update the property first
+        node.properties = node.properties || {};
+        node.properties["lora_config"] = jsonConfig;
+        
+        // 2. Find the widget - it MUST exist for Python to receive the data
+        let hiddenWidget = node.widgets?.find(w => w.name === "lora_config");
+        
+        // If widget doesn't exist, create it
+        if (!hiddenWidget) {
+            hiddenWidget = node.addWidget("text", "lora_config", jsonConfig, null, {
+                multiline: true,
+                hidden: true,
+                serialize: true
+            });
+        } else {
+            // Update existing widget
+            hiddenWidget.value = jsonConfig;
+        }
+        
+        // Ensure widget is properly hidden AND has serialize flag set to true
+        if (hiddenWidget) {
+            // Ensure serialize flag is set
+            if (!hiddenWidget.serialize) {
+                hiddenWidget.serialize = true;
+            }
+            
+            // Extra steps to ensure the widget is truly hidden
+            hiddenWidget.hidden = true;
+            hiddenWidget.type = "hidden";  // Set type explicitly to hidden
+            hiddenWidget.computeSize = function(width) { return [0, -4]; }; // Make it take no space
+            hiddenWidget.draw = function() {}; // Empty draw function
+        }
+        
+        node.setDirtyCanvas(true, true);
+    } catch (e) {
+        console.error("[LoraSwitcherDynamic] Failed to update lora_config:", e);
+    }
+}
+
+// NEW function to create the widget object (based on old addLoraRow logic)
+function createLoraRowWidget(node, index, initialValue = { lora: "None", strength: 1.0 }) {
+    const widgetName = `lora_row_${index}`;
+
+    const widget = {
+        name: widgetName,
+        type: `CUSTOM`,
+        value: { ...initialValue, index: index },
+        serialize: false, // Prevent direct serialization of this custom widget
+
+        draw: function (ctx, node, widgetWidth, widgetY, widgetHeight) {
+            const margin = 10;
+            const line_y = widgetY + widgetHeight * 0.5; // Center vertically for text
+            const rect = [margin, widgetY, widgetWidth - margin * 2, widgetHeight]; // Example bounding box
+            
+            // Draw background for the entire widget
+            ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+            ctx.fillRect(rect[0], rect[1], rect[2], rect[3]);
+            
+            // Define index area width and adjust other areas
+            const indexWidth = widgetWidth * 0.1;
+            const nameWidth = widgetWidth * 0.5;
+            const strengthWidth = widgetWidth * 0.2;
+            const removeWidth = widgetWidth * 0.1;
+            
+            // Calculate positions
+            const indexX = rect[0];
+            const nameX = indexX + indexWidth;
+            const strengthX = nameX + nameWidth;
+            const removeX = strengthX + strengthWidth;
+            
+            // Define clickable areas based on layout
+            this.hitAreas = this.hitAreas || {}; // Ensure hitAreas exists
+            this.hitAreas.index = [indexX, rect[1], indexWidth, rect[3]]; // Make index number clickable too
+            this.hitAreas.name = [nameX, rect[1], nameWidth, rect[3]];
+            this.hitAreas.strength = [strengthX, rect[1], strengthWidth, rect[3]];
+            this.hitAreas.remove = [removeX, rect[1], removeWidth, rect[3]];
+            
+            // Draw index number with background circle
+            const activeIndex = this.value.index + 1; // +1 because active_index is 1-based (0=bypass)
+            const circleX = indexX + indexWidth / 2;
+            const circleY = line_y;
+            const circleRadius = Math.min(indexWidth, widgetHeight) * 0.4;
+            
+            // Draw circle background for index
+            ctx.fillStyle = "#4488ff"; // Bright blue background for index
+            ctx.beginPath();
+            ctx.arc(circleX, circleY, circleRadius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw index text
+            ctx.fillStyle = "#FFF"; // White text for index number
+            ctx.font = "bold 14px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(activeIndex.toString(), circleX, circleY);
+            
+            // Helper function to truncate text with ellipsis
+            function truncateText(text, maxLength) {
+                if (!text) return "None";
+                
+                // Remove .safetensors extension to save space
+                text = text.replace('.safetensors', '');
+                
+                if (text.length <= maxLength) return text;
+                return text.substring(0, maxLength - 3) + "...";
+            }
+            
+            // Draw content (LoRA name, strength, remove button)
+            ctx.fillStyle = "#DDD"; // Text color for other elements
+            ctx.font = "14px Arial";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            
+            // Store full name for tooltip and truncate for display
+            const fullLoraName = this.value.lora || "None";
+            const truncatedName = truncateText(fullLoraName, 15); // Limit to 15 chars + ellipsis
+            
+            // Draw truncated LoRA name
+            ctx.fillText(truncatedName, nameX + 5, line_y); // Add padding
+            
+            // Store the full name for potential tooltip functionality
+            this.fullLoraName = fullLoraName;
+            
+            ctx.textAlign = "center";
+            ctx.fillText(this.value.strength.toFixed(2), strengthX + strengthWidth / 2, line_y);
+            
+            ctx.fillStyle = "#F55"; // Red for remove button
+            ctx.textAlign = "center";
+            ctx.fillText(" X ", removeX + removeWidth / 2, line_y);
+        },
+        mouse: function (event, pos, node) {
+            const widgetHeight = LiteGraph.NODE_WIDGET_HEIGHT; // Or your calculated height
+            const widgetY = this.last_y || 0; // Use stored Y position
+            
+            // Show tooltip on hover over name area
+            if (event.type === 'mousemove') {
+                for (const areaName in this.hitAreas) {
+                    const area = this.hitAreas[areaName];
+                    if (pos[0] >= area[0] && pos[0] <= area[0] + area[2] && // Check X
+                        pos[1] >= widgetY && pos[1] <= widgetY + widgetHeight) { // Check Y relative to widget
+                        
+                        if (areaName === 'name' && this.fullLoraName && this.fullLoraName !== "None") {
+                            // Set tooltip for the full LoRA name
+                            const canvas = node.graph.canvas;
+                            if (canvas) {
+                                canvas.canvas.title = this.fullLoraName;
+                                canvas.setDirty(true, false); // Request redraw without propagating
+                            }
+                            return true;
+                        }
+                    }
+                }
+                
+                // Clear tooltip when not over the name area
+                const canvas = node.graph.canvas;
+                if (canvas && canvas.canvas.title) {
+                    canvas.canvas.title = "";
+                }
+            }
+            
+            if (event.type === 'pointerdown') {
+                for (const areaName in this.hitAreas) {
+                    const area = this.hitAreas[areaName];
+                    if (pos[0] >= area[0] && pos[0] <= area[0] + area[2] && // Check X
+                        pos[1] >= widgetY && pos[1] <= widgetY + widgetHeight) { // Check Y relative to widget
+
+                        if (areaName === 'name') {
+                            // Fetch latest LoRA names first, then show menu
+                            fetchLoraNames().then(loraNames => {
+                                // Format the names for the menu
+                                const menuItems = loraNames.map(name => {
+                                    return {
+                                        content: name,
+                                        callback: () => {
+                                            this.value.lora = name;
+                                            updateHiddenConfig(node);
+                                            node.setDirtyCanvas(true, true);
+                                        }
+                                    };
+                                });
+                                
+                                // Use LiteGraph.ContextMenu for LoRA selection with formatted items
+                                new LiteGraph.ContextMenu(menuItems, {
+                                    event: event,
+                                    callback: null, // We use the per-item callbacks instead
+                                    node: node
+                                });
+                            });
+                        } else if (areaName === 'strength') {
+                            const newValue = prompt("Enter new strength:", this.value.strength);
+                            if (newValue !== null) {
+                                const numValue = parseFloat(newValue);
+                                if (!isNaN(numValue)) {
+                                    this.value.strength = numValue;
+                                    updateHiddenConfig(node);
+                                    node.setDirtyCanvas(true, true);
+                                }
+                            }
+                        } else if (areaName === 'remove') {
+                            const indexToRemove = node.widgets.indexOf(this);
+                            if (indexToRemove > -1) {
+                                node.widgets.splice(indexToRemove, 1);
+                                // Re-index remaining widgets (important!)
+                                node.widgets.filter(w => w.type === 'CUSTOM').forEach((w, i) => {
+                                    if (w.value) w.value.index = i;
+                                    w.name = `lora_row_${i}`;
+                                });
+                                updateHiddenConfig(node);
+                                node.setDirtyCanvas(true, true);
+                            }
+                        }
+                        return true; // Indicate event handled
+                    }
+                }
+            }
+            return false; // Event not handled by this widget
+        },
+    };
+    return widget;
+}
+
+// NEW function to add standard widgets (button)
+function addStandardWidgets(node) {
+    const buttonName = "+ Add LoRA";
+    
+    // Check if button already exists to prevent duplicates
+    const existingButton = node.widgets?.find(w => 
+        w.type === "button" && 
+        w.name === buttonName
+    );
+    
+    if (existingButton) {
+        return existingButton;
+    }
+    
+    const buttonWidget = node.addWidget(
+        "button",
+        buttonName,
+        buttonName,
+        () => {
+            const nextIndex = node.widgets.filter(w => w.type === 'CUSTOM').length;
+            const newWidgetObject = createLoraRowWidget(node, nextIndex);
+            node.addCustomWidget(newWidgetObject); // Add the actual custom widget instance
+            updateHiddenConfig(node);
+            node.setDirtyCanvas(true, true);
+        },
+        {}
+    );
+    return buttonWidget;
+}
+
+// Ensure LoRA names are loaded on startup
+fetchLoraNames().catch(err => {
+    console.error("[LoraSwitcherDynamic] Failed to fetch initial LoRA list:", err);
+});
+
+// Register the extension
+app.registerExtension({
+    name: "oshtz.LoraSwitcherDynamic",
+    async beforeRegisterNodeDef(nodeType, nodeData, appInstance) {
+        // Store the app instance for later use in widget handlers
+        OshtzApp = appInstance;
+        
+        // Store LoRA names in the extension for global access
+        this.lora_names = await fetchLoraNames().catch(() => ["None"]);
+
+        // Check if the node type matches
+        if (nodeData.name === 'LoraSwitcherDynamic') {
+            // --- Modify onNodeCreated ---
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+
+                // Add standard widgets (button)
+                addStandardWidgets(this);
+
+                // Initialize an empty lora_config hidden widget
+                // This is CRITICAL - it needs to exist for the data to be passed to Python
+                const configWidget = this.addWidget("text", "lora_config", "[]", () => {}, {
+                    multiline: true,
+                    hidden: true,
+                    serialize: true
+                });
+                
+                // Extra steps to ensure the widget is truly hidden from the beginning
+                if (configWidget) {
+                    configWidget.hidden = true;
+                    configWidget.type = "hidden";  // Set type explicitly to hidden
+                    configWidget.computeSize = function(width) { return [0, -4]; }; // Make it take no space
+                    configWidget.draw = function() {}; // Empty draw function
+                }
+
+                // Also set property for backward compatibility
+                this.properties = this.properties || {};
+                this.properties["lora_config"] = "[]";
+                
+                // Initial size adjustment
+                const computed = this.computeSize();
+                this.size = this.size || [0, 0];
+                this.size[0] = Math.max(this.size[0], computed?.[0] || 200);
+                this.size[1] = Math.max(this.size[1], computed?.[1] || 80);
+                this.setDirtyCanvas(true, true);
+            };
+
+            // --- Modify onConfigure ---
+            const onConfigure = nodeType.prototype.onConfigure;
+            nodeType.prototype.onConfigure = function (info) {
+                 // Call original first IF it exists and does something important
+                 // onConfigure?.apply(this, arguments); // Maybe skip if it interferes? Test needed.
+
+                 // Store size before modifying
+                 const originalSize = [...(this.size || [0,0])];
+                 // Don't clear existing widgets as we want to preserve them
+
+                 // Get saved configuration from properties (more reliable than widget_values)
+                 let savedConfig = [];
+                 if (this.properties && this.properties["lora_config"]) {
+                     try {
+                         savedConfig = JSON.parse(this.properties["lora_config"]);
+                         if (!Array.isArray(savedConfig)) savedConfig = []; // Ensure it's an array
+                     } catch (e) {
+                         console.error("[LoraSwitcherDynamic] Failed to parse saved config from properties:", e, "Config was:", this.properties["lora_config"]);
+                         savedConfig = [];
+                     }
+                 } else {
+                      savedConfig = [];
+                 }
+
+                 // Re-add the standard widgets (button)
+                 addStandardWidgets(this);
+
+                 // Find existing LoRA row widgets
+                 const existingLoraWidgets = this.widgets?.filter(w => w.type === 'CUSTOM' && w.name?.startsWith('lora_row_')) || [];
+                 
+                 // Update existing widgets or create new ones as needed
+                 for (let i = 0; i < savedConfig.length; i++) {
+                     const loraData = savedConfig[i];
+                     const cleanData = {
+                         lora: loraData.lora || "None",
+                         strength: typeof loraData.strength === 'number' ? loraData.strength : 1.0
+                     };
+                     
+                     // Find existing widget with this index
+                     const existingWidget = existingLoraWidgets.find(w => w.value?.index === i);
+                     
+                     if (existingWidget) {
+                         // Update existing widget instead of creating a new one
+                         existingWidget.value = { ...cleanData, index: i };
+                     } else {
+                         // Create new widget if none exists at this index
+                         const loraWidgetObject = createLoraRowWidget(this, i, cleanData);
+                         this.addCustomWidget(loraWidgetObject);
+                     }
+                 }
+                 
+                 // Remove any excess widgets if needed
+                 const allWidgets = [...this.widgets];
+                 for (const widget of allWidgets) {
+                     if (widget.type === 'CUSTOM' && widget.name?.startsWith('lora_row_')) {
+                         const index = widget.value?.index;
+                         if (index !== undefined && index >= savedConfig.length) {
+                             const widgetIndex = this.widgets.indexOf(widget);
+                             if (widgetIndex > -1) {
+                                 this.removeWidget(widgetIndex);
+                             }
+                         }
+                     }
+                 }
+
+                 // Get current config from the widgets to ensure it reflects the current state
+                 const currentConfig = this.widgets
+                     .filter(w => w.type === 'CUSTOM' && w.name?.startsWith('lora_row_')) // Get only our custom LoRA rows
+                     .map(w => w.value) // Extract their value object
+                     .sort((a, b) => a.index - b.index); // Ensure order by index
+                 
+                 // Convert to JSON string for storage
+                 const jsonConfig = JSON.stringify(currentConfig);
+                 
+                 // IMPORTANT: We MUST update both the property and the hidden widget
+                 // Update the property
+                 this.properties = this.properties || {};
+                 this.properties["lora_config"] = jsonConfig;
+                 
+                 // Remove any existing lora_config widget first to avoid duplicates
+                 const existingConfigWidget = this.widgets.find(w => w.name === "lora_config");
+                 if (existingConfigWidget) {
+                     const widgetIndex = this.widgets.indexOf(existingConfigWidget);
+                     if (widgetIndex > -1) {
+                         this.widgets.splice(widgetIndex, 1);
+                     }
+                 }
+                 
+                 // Add the hidden widget with the JSON config - CRITICAL for data to be passed to Python
+                 const configWidget = this.addWidget("text", "lora_config", jsonConfig, null, {
+                     multiline: true,
+                     hidden: true, 
+                     serialize: true // This is crucial - tells ComfyUI to pass this to Python!
+                 });
+                 
+                 // Extra steps to ensure the widget is truly hidden
+                 if (configWidget) {
+                     configWidget.hidden = true;
+                     configWidget.type = "hidden";  // Set type explicitly to hidden
+                     configWidget.computeSize = function(width) { return [0, -4]; }; // Make it take no space
+                     configWidget.draw = function() {}; // Empty draw function
+                 }
+
+
+                 // Optional: Refresh LoRA names list
+                 fetchLoraNames().then(names => {
+                    // Add safety check to prevent "extensions['oshtz.LoraSwitcherDynamic'] is undefined" error
+                    if (app && app.extensions && app.extensions["oshtz.LoraSwitcherDynamic"]) {
+                        app.extensions["oshtz.LoraSwitcherDynamic"].lora_names = names || [];
+                    } else {
+                        console.warn("[LoraSwitcherDynamic] Extension not found when refreshing LoRA names list");
+                        // Store names locally as fallback
+                        LORA_NAMES = names || ["None"];
+                    }
+                 }).catch(err => {
+                    console.error("[LoraSwitcherDynamic] Error refreshing LoRA names list:", err);
+                 });
+
+                 // Adjust size after adding widgets
+                 const computed = this.computeSize();
+                 this.size = [
+                     Math.max(originalSize[0], computed?.[0] || 200),
+                     Math.max(originalSize[1], computed?.[1] || 80)
+                 ];
+
+                 this.setDirtyCanvas(true, true);
+            };
+
+            // --- Overwrite onSerialize to store config in properties --- 
+            const onSerialize = nodeType.prototype.onSerialize;
+            nodeType.prototype.onSerialize = function(o) {
+                // Call original if needed
+                onSerialize?.apply(this, arguments);
+
+                // REMOVED: Logic that searched for lora_config widget and manually set properties.
+                // This is now handled correctly by updateHiddenConfig directly modifying node.properties.
+                // ComfyUI's default serialization will save node.properties.
+            }
+
+            // --- Keep nodeCreated callback ---
+            nodeType.prototype.nodeCreated = function(node, app) {
+                if (node.constructor.nodeData.name === "LoraSwitcherDynamic") {
+                    // Initial update might be useful if properties aren't loaded yet
+                    // updateHiddenConfig(node);
+                }
+            }
+        }
+    },
 });
