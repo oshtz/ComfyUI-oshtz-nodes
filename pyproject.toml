@@ -2,7 +2,7 @@
 [project]
 name = "comfyui-oshtz-nodes"
 description = "Custom ComfyUI nodes including LLM integration, GPT Image 1, LoRA switchers, aspect ratio helper, image tools, and more"
-version = "1.1.0"
+version = "1.1.1"
 license = { file = "LICENSE.txt" }
 dependencies = [
     "requests",
