@@ -17,10 +17,11 @@ Split text into multiple outputs:
 - Up to 10 separate outputs
 - Customizable separator
 
-### LoRA Switcher Node
-Efficient LoRA switch made for API use:
-- Switch between up to 40 LoRAs in a single node (10, 20, 40)
-- Fine-tune strength
+### LoRA Switcher (Dynamic)
+Dynamic LoRA selection powered by a single configurable node:
+- Drive LoRA choice via API-friendly widget data
+- Unlimited rows with custom strengths managed from the UI
+- Keeps workflows simpler than juggling fixed 10/20/40 variants
 
 ### Image Overlay Node (Beta 🚧)
 Combine images with precision:
@@ -63,3 +64,5 @@ pip install -r requirements.txt
 
 ## License
 This project is open-source and available under the MIT License.
+
+
