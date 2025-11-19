@@ -2,8 +2,9 @@
 Custom nodes for ComfyUI created for some of my workflows.
 
 ### LLM All-in-One Node
-Easy GPT/Claude integration in ComfyUI:
+Easy GPT/Claude/OpenRouter integration in ComfyUI:
 - OpenAI & Anthropic models
+- Live OpenRouter model list fetched directly from the registry
 - Image-to-text capabilities
 <div style="display: flex; align-items: center; justify-content: space-between;">
   <img src="https://github.com/oshtz/ComfyUI-oshtz-nodes/blob/main/examples/prompt_enhancer.jpg?raw=true" alt="alt text" height="250"/>
@@ -64,5 +65,6 @@ pip install -r requirements.txt
 
 ## License
 This project is open-source and available under the MIT License.
+
 
 
