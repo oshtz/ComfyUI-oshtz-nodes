@@ -10,3 +10,4 @@ link.onerror = (e) => console.error("[oshtz-nodes] Failed to load CSS:", oshtzCs
 document.head.appendChild(link);
 
 import "./js/lora_switcher.js";
+import "./js/llm_aio.js";
