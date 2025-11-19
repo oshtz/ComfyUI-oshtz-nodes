@@ -18,4 +18,4 @@ Repository = "https://github.com/oshtz/ComfyUI-oshtz-nodes"
 [tool.comfy]
 PublisherId = "oshtz"
 DisplayName = "oshtz Nodes"
-Icon = "https://raw.githubusercontent.com/oshtz/ComfyUI-oshtz-nodes/main/examples/prompt_enhancer.jpg"
+Icon = "https://github.com/oshtz.png"

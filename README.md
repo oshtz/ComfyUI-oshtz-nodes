@@ -13,6 +13,18 @@ Easy GPT/Claude/OpenRouter integration in ComfyUI:
   </a>
 </div>
 
+### GPT Image 1 Node
+Generate images via OpenAI's vision model:
+- Direct OpenAI API integration
+- Image editing capabilities with mask support
+- Quality and size customization
+- Transparent background option
+
+### Easy Aspect Ratio Node
+Simplify your workflow with preset aspect ratios:
+- Large selection of common ratios (1:1, 16:9, 21:9, etc.)
+- Returns width and height values
+
 ### String Splitter Node
 Split text into multiple outputs:
 - Up to 10 separate outputs
