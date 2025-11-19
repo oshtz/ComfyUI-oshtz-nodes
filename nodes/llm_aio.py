@@ -47,6 +47,9 @@ ANTHROPIC_MODELS_ENDPOINT = "https://api.anthropic.com/v1/models"
 ANTHROPIC_CACHE_TTL = 3600  # seconds
 ANTHROPIC_MODELS_CACHE: Dict[str, Dict[str, Any]] = {}
 ANTHROPIC_DEFAULT_VERSION = "2023-06-01"
+GEMINI_MODELS_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_CACHE_TTL = 3600  # seconds
+GEMINI_MODELS_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def get_openrouter_models(force_refresh: bool = False) -> List[str]:
@@ -186,16 +189,66 @@ def get_anthropic_models_error(api_key: Optional[str] = None, version: Optional[
     return cache_entry.get("error")
 
 
+def get_gemini_models(api_key: Optional[str] = None, force_refresh: bool = False) -> List[str]:
+    """Fetch Gemini models when an API key is provided. Returns an empty list without a key."""
+    if not api_key:
+        return []
+    cache_key = _hash_api_key(api_key)
+    cache_entry = GEMINI_MODELS_CACHE.setdefault(cache_key, {"models": [], "timestamp": 0.0, "error": None})
+    cached_models = cache_entry.get("models") or []
+    last_refresh = cache_entry.get("timestamp", 0)
+    now = time.time()
+    if (
+        cached_models
+        and not force_refresh
+        and now - last_refresh < GEMINI_CACHE_TTL
+    ):
+        return cached_models
+    try:
+        headers = {"x-goog-api-key": api_key}
+        response = requests.get(GEMINI_MODELS_ENDPOINT, headers=headers, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        models = [
+            model["name"].replace("models/", "")
+            for model in data.get("models", [])
+            if isinstance(model, dict) and "name" in model and model.get("supportedGenerationMethods", [])
+        ]
+        if models:
+            cache_entry["models"] = models
+            cache_entry["timestamp"] = now
+            cache_entry["error"] = None
+            return models
+    except Exception as err:
+        message = f"[LLM AIO] Failed to refresh Gemini models: {err}"
+        print(message)
+        cache_entry["error"] = message
+    return cached_models
+
+
+def get_gemini_models_error(api_key: Optional[str] = None) -> Optional[str]:
+    if not api_key:
+        return None
+    cache_key = _hash_api_key(api_key)
+    cache_entry = GEMINI_MODELS_CACHE.get(cache_key)
+    if not cache_entry:
+        return None
+    return cache_entry.get("error")
+
+
 def get_models_by_provider(
     openai_api_key: Optional[str] = None,
     anthropic_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
     force_refresh_openai: bool = False,
     force_refresh_anthropic: bool = False,
+    force_refresh_gemini: bool = False,
     force_refresh_openrouter: bool = False,
 ) -> Dict[str, List[str]]:
     return {
         "openai": get_openai_models(api_key=openai_api_key, force_refresh=force_refresh_openai),
         "anthropic": get_anthropic_models(api_key=anthropic_api_key, force_refresh=force_refresh_anthropic),
+        "gemini": get_gemini_models(api_key=gemini_api_key, force_refresh=force_refresh_gemini),
         "openrouter": get_openrouter_models(force_refresh=force_refresh_openrouter),
     }
 
@@ -235,6 +288,12 @@ def get_all_model_options() -> List[str]:
                 ordered.append(model)
 
     for cache_entry in ANTHROPIC_MODELS_CACHE.values():
+        for model in cache_entry.get("models", []):
+            if model not in seen:
+                seen.add(model)
+                ordered.append(model)
+
+    for cache_entry in GEMINI_MODELS_CACHE.values():
         for model in cache_entry.get("models", []):
             if model not in seen:
                 seen.add(model)
@@ -304,6 +363,23 @@ class LLMMessage(BaseModel):
             "role": self.role,
             "content": self.content
         }
+
+    def to_gemini_message(self):
+        # Gemini uses "parts" array directly without role in the parts
+        parts = []
+        for item in self.content:
+            if item.get("type") == "text":
+                parts.append({"text": item["text"]})
+            elif item.get("type") == "image" and "source" in item:
+                source = item["source"]
+                if source.get("type") == "base64":
+                    parts.append({
+                        "inline_data": {
+                            "mime_type": source.get("media_type", "image/png"),
+                            "data": source.get("data", "")
+                        }
+                    })
+        return {"parts": parts}
 
 class OpenAIApi(BaseModel):
     api_key: str
@@ -409,6 +485,47 @@ class ClaudeApi(BaseModel):
         messages = [LLMMessage.create(role=LLMMessageRole.user, text=prompt)]
         return self.chat(messages, config)
 
+class GeminiApi(BaseModel):
+    api_key: str
+    endpoint: Optional[str] = "https://generativelanguage.googleapis.com/v1beta"
+    timeout: Optional[int] = 60
+
+    def chat(self, messages: List[LLMMessage], config: LLMConfig):
+        available = get_gemini_models(api_key=self.api_key)
+        if available and config.model not in available:
+            raise Exception(f"Must provide a Gemini model, got {config.model}")
+
+        # Convert messages to Gemini format
+        contents = [m.to_gemini_message() for m in messages]
+
+        url = f"{self.endpoint}/models/{config.model}:generateContent"
+        data = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": config.temperature,
+                "maxOutputTokens": config.max_token,
+            }
+        }
+        headers = {
+            "x-goog-api-key": self.api_key,
+            "Content-Type": "application/json"
+        }
+        response = requests.post(url, json=data, headers=headers, timeout=self.timeout)
+        data: Dict = response.json()
+
+        if data.get("error"):
+            error_data = data.get("error")
+            raise Exception(error_data.get("message", str(error_data)))
+
+        if not data.get("candidates"):
+            raise Exception("No response candidates returned from Gemini")
+
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    def complete(self, prompt: str, config: LLMConfig):
+        messages = [LLMMessage.create(role=LLMMessageRole.user, text=prompt)]
+        return self.chat(messages, config)
+
 class AwsBedrockMistralApi(BaseModel):
     aws_access_key_id: str
     aws_secret_access_key: str
@@ -502,7 +619,7 @@ class AwsBedrockClaudeApi(BaseModel):
             raise Exception(data.get("error").get("message"))
         return data["completion"]
 
-LLMApi = Union[OpenAIApi, ClaudeApi, OpenRouterApi, AwsBedrockMistralApi, AwsBedrockClaudeApi]
+LLMApi = Union[OpenAIApi, ClaudeApi, GeminiApi, OpenRouterApi, AwsBedrockMistralApi, AwsBedrockClaudeApi]
 
 class LLMAIONode:
     TITLE = "LLM All-In-One"
@@ -519,7 +636,7 @@ class LLMAIONode:
             model_values = [""]
         return {
             "required": {
-                "api_type": (["openai", "anthropic", "openrouter"],),
+                "api_type": (["openai", "anthropic", "gemini", "openrouter"],),
                 "model": (
                     model_values,
                     {"default": default_model},
@@ -532,13 +649,14 @@ class LLMAIONode:
             "optional": {
                 "openai_api_key": ("STRING", {"multiline": False}),
                 "anthropic_api_key": ("STRING", {"multiline": False}),
+                "gemini_api_key": ("STRING", {"multiline": False}),
                 "openrouter_api_key": ("STRING", {"multiline": False}),
                 "image": ("IMAGE",),
             }
         }
 
     def process(self, api_type, model, max_token, temperature, prompt, seed,
-                openai_api_key=None, anthropic_api_key=None, openrouter_api_key=None,
+                openai_api_key=None, anthropic_api_key=None, gemini_api_key=None, openrouter_api_key=None,
                 image: Optional[Tensor] = None):
         provider = normalize_provider_name(api_type)
         config = LLMConfig(
@@ -555,6 +673,10 @@ class LLMAIONode:
             if not anthropic_api_key:
                 raise ValueError("Anthropic API key is required for Anthropic models")
             api = ClaudeApi(api_key=anthropic_api_key)
+        elif provider == "gemini":
+            if not gemini_api_key:
+                raise ValueError("Gemini API key is required for Gemini models")
+            api = GeminiApi(api_key=gemini_api_key)
         elif provider == "openrouter":
             if not openrouter_api_key:
                 raise ValueError("OpenRouter API key is required for OpenRouter models")
@@ -593,6 +715,7 @@ if server and web:
         force_refresh: bool,
         openai_api_key: Optional[str],
         anthropic_api_key: Optional[str],
+        gemini_api_key: Optional[str],
     ):
         normalized = normalize_provider_name(provider)
         if normalized == "openrouter":
@@ -606,20 +729,28 @@ if server and web:
             models = get_anthropic_models(api_key=anthropic_api_key, force_refresh=force_refresh)
             error = get_anthropic_models_error(api_key=anthropic_api_key)
             return {"provider": normalized, "models": models, "error": error}
+        if normalized == "gemini":
+            models = get_gemini_models(api_key=gemini_api_key, force_refresh=force_refresh)
+            error = get_gemini_models_error(api_key=gemini_api_key)
+            return {"provider": normalized, "models": models, "error": error}
         if normalized:
             models = get_models_by_provider(
                 openai_api_key=openai_api_key,
                 anthropic_api_key=anthropic_api_key,
+                gemini_api_key=gemini_api_key,
                 force_refresh_openai=force_refresh,
                 force_refresh_anthropic=force_refresh,
+                force_refresh_gemini=force_refresh,
                 force_refresh_openrouter=force_refresh,
             ).get(normalized, [])
             return {"provider": normalized, "models": models}
         return get_models_by_provider(
             openai_api_key=openai_api_key,
             anthropic_api_key=anthropic_api_key,
+            gemini_api_key=gemini_api_key,
             force_refresh_openai=force_refresh,
             force_refresh_anthropic=force_refresh,
+            force_refresh_gemini=force_refresh,
             force_refresh_openrouter=force_refresh,
         )
 
@@ -629,7 +760,8 @@ if server and web:
         force_refresh = _truthy(request.rel_url.query.get("force", "0"))
         openai_api_key = request.rel_url.query.get("openai_api_key")
         anthropic_api_key = request.rel_url.query.get("anthropic_api_key")
-        data = _build_model_response(provider, force_refresh, openai_api_key, anthropic_api_key)
+        gemini_api_key = request.rel_url.query.get("gemini_api_key")
+        data = _build_model_response(provider, force_refresh, openai_api_key, anthropic_api_key, gemini_api_key)
         return web.json_response(data)
 
     @server.PromptServer.instance.routes.post("/oshtz-nodes/llm-models")
@@ -642,5 +774,6 @@ if server and web:
         force_refresh = _truthy(payload.get("force", False))
         openai_api_key = payload.get("openai_api_key")
         anthropic_api_key = payload.get("anthropic_api_key")
-        data = _build_model_response(provider, force_refresh, openai_api_key, anthropic_api_key)
+        gemini_api_key = payload.get("gemini_api_key")
+        data = _build_model_response(provider, force_refresh, openai_api_key, anthropic_api_key, gemini_api_key)
         return web.json_response(data)

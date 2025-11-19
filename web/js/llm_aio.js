@@ -71,6 +71,12 @@ function getAnthropicApiKey(node) {
     return typeof value === "string" ? value.trim() : "";
 }
 
+function getGeminiApiKey(node) {
+    const widget = findWidget(node, "gemini_api_key");
+    const value = widget?.value ?? "";
+    return typeof value === "string" ? value.trim() : "";
+}
+
 function normalizeProvider(provider) {
     if (!provider && provider !== 0) {
         return "";
@@ -82,13 +88,15 @@ function normalizeProvider(provider) {
     return value;
 }
 
-async function requestModels({ provider, force = false, openaiApiKey = "", anthropicApiKey = "" } = {}) {
+async function requestModels({ provider, force = false, openaiApiKey = "", anthropicApiKey = "", geminiApiKey = "" } = {}) {
     const normalized = normalizeProvider(provider) || undefined;
     const trimmedKey = typeof openaiApiKey === "string" ? openaiApiKey.trim() : "";
     const trimmedAnthropicKey = typeof anthropicApiKey === "string" ? anthropicApiKey.trim() : "";
+    const trimmedGeminiKey = typeof geminiApiKey === "string" ? geminiApiKey.trim() : "";
     const useSecureRequest =
         (normalized === "openai" && trimmedKey) ||
-        (normalized === "anthropic" && trimmedAnthropicKey);
+        (normalized === "anthropic" && trimmedAnthropicKey) ||
+        (normalized === "gemini" && trimmedGeminiKey);
     let url = MODEL_ENDPOINT;
     let options;
     if (useSecureRequest) {
@@ -101,6 +109,9 @@ async function requestModels({ provider, force = false, openaiApiKey = "", anthr
         }
         if (trimmedAnthropicKey) {
             payload.anthropic_api_key = trimmedAnthropicKey;
+        }
+        if (trimmedGeminiKey) {
+            payload.gemini_api_key = trimmedGeminiKey;
         }
         options = {
             method: "POST",
@@ -185,6 +196,13 @@ function refreshProviderModels(node, provider) {
         }
         return requestModels({ provider: normalized, force: true, anthropicApiKey: apiKey });
     }
+    if (normalized === "gemini") {
+        const apiKey = getGeminiApiKey(node);
+        if (!apiKey) {
+            return Promise.resolve([]);
+        }
+        return requestModels({ provider: normalized, force: true, geminiApiKey: apiKey });
+    }
     if (normalized === "openrouter") {
         return requestModels({ provider: normalized, force: true });
     }
@@ -198,6 +216,9 @@ function canRefreshProvider(node, provider) {
     }
     if (normalized === "anthropic") {
         return !!getAnthropicApiKey(node);
+    }
+    if (normalized === "gemini") {
+        return !!getGeminiApiKey(node);
     }
     if (normalized === "openrouter") {
         return true;
@@ -268,7 +289,7 @@ function updateModelWidget(node, provider, attemptRefresh = true) {
         }
 
         node.setDirtyCanvas(true, true);
-        if (attemptRefresh && (normalized === "openrouter" || normalized === "openai" || normalized === "anthropic")) {
+        if (attemptRefresh && (normalized === "openrouter" || normalized === "openai" || normalized === "anthropic" || normalized === "gemini")) {
             refreshProviderModels(node, normalized)
                 .then(() => updateModelWidget(node, normalized, false))
                 .catch((err) => {
@@ -305,7 +326,7 @@ function attachProviderWatcher(node) {
         originalCallback?.apply(this, arguments);
         const provider = providerWidget.value;
         const normalized = normalizeProvider(provider);
-        if (normalized === "openrouter" || normalized === "openai" || normalized === "anthropic") {
+        if (normalized === "openrouter" || normalized === "openai" || normalized === "anthropic" || normalized === "gemini") {
             updateModelWidget(node, normalized, true);
         } else {
             updateModelWidget(node, normalized, false);
@@ -352,10 +373,30 @@ function attachAnthropicKeyWatcher(node) {
     };
 }
 
+function attachGeminiKeyWatcher(node) {
+    const keyWidget = findWidget(node, "gemini_api_key");
+    if (!keyWidget || keyWidget._oshtzGeminiWatcherAttached) {
+        return;
+    }
+    keyWidget._oshtzGeminiWatcherAttached = true;
+    const originalCallback = keyWidget.callback;
+    keyWidget.callback = function () {
+        originalCallback?.apply(this, arguments);
+        const providerWidget = findWidget(node, "api_type");
+        const provider = providerWidget?.value;
+        const normalized = normalizeProvider(provider);
+        if (normalized === "gemini") {
+            updateModelWidget(node, normalized, true);
+        }
+        updateRefreshButtonState(node);
+    };
+}
+
 function initializeNode(node) {
     attachProviderWatcher(node);
     attachOpenAIKeyWatcher(node);
     attachAnthropicKeyWatcher(node);
+    attachGeminiKeyWatcher(node);
     ensureRefreshButton(node);
     const providerWidget = findWidget(node, "api_type");
     let providerValue = "openai";
@@ -367,7 +408,7 @@ function initializeNode(node) {
         providerValue = normalizedValue;
     }
     const normalized = normalizeProvider(providerValue || "openai") || "openai";
-    const attemptRefresh = normalized === "openrouter" || normalized === "openai" || normalized === "anthropic";
+    const attemptRefresh = normalized === "openrouter" || normalized === "openai" || normalized === "anthropic" || normalized === "gemini";
     updateModelWidget(node, normalized, attemptRefresh);
 }
 
