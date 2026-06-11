@@ -1,5 +1,4 @@
 requests
-torch
 pydantic
 Pillow
-boto3>=1.34.101
+numpy

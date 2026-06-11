@@ -224,7 +224,7 @@ class GPTImage1(ComfyNodeABC):
         return {
             "required": {
                 "prompt": (IO.STRING, {"multiline": True, "default": "", "tooltip": f"Text prompt for the {_MODEL_ID} model"}),
-                "api_key": (IO.STRING, {"multiline": False, "default": "", "tooltip": "Your OpenAI API Key (required)"}),
+                "api_key": (IO.STRING, {"multiline": False, "default": "", "tooltip": "Optional. Leave blank to use OPENAI_API_KEY.", "password": True}),
             },
             "optional": {
                 "seed": (IO.INT, {"default": 0, "min": 0, "max": 2**31-1, "step": 1, "display": "number", "tooltip": "Seed for generation (check model support)"}),
