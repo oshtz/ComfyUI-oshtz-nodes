@@ -1,78 +1,80 @@
 # ComfyUI-oshtz-nodes
-Custom nodes for ComfyUI created for some of my workflows.
 
-### LLM All-in-One Node
-Easy GPT/Claude integration in ComfyUI:
-- OpenAI & Anthropic models
-- Image-to-text capabilities
+Custom nodes for ComfyUI created for practical prompt, LoRA, image API, and utility workflows.
+
+## Nodes
+
+### LLM All-in-One
+
+Easy GPT, Claude, and OpenRouter integration in ComfyUI:
+
+- OpenAI, Anthropic, and OpenRouter providers
+- Live OpenRouter model list fetched through the node backend
+- Image-to-text capabilities for vision-capable models
+- API keys via widget inputs or environment variables:
+  `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`
+
 <div style="display: flex; align-items: center; justify-content: space-between;">
-  <img src="https://github.com/oshtz/ComfyUI-oshtz-nodes/blob/main/examples/prompt_enhancer.jpg?raw=true" alt="alt text" height="250"/>
+  <img src="https://github.com/oshtz/ComfyUI-oshtz-nodes/blob/main/examples/prompt_enhancer.jpg?raw=true" alt="Prompt enhancer example" height="250"/>
   <a href="https://youtu.be/0KZ7sMd4jUo">
     <img src="https://img.youtube.com/vi/0KZ7sMd4jUo/maxresdefault.jpg" alt="Watch the video" height="250"/>
   </a>
 </div>
 
-### GPT Image 1 Node
-Generate images via OpenAI's vision model:
-- Direct OpenAI API integration
-- Image editing capabilities with mask support
-- Quality and size customization
-- Transparent background option
+### LoRA Switcher (Dynamic)
 
-### Easy Aspect Ratio Node
-Simplify your workflow with preset aspect ratios:
-- Large selection of common ratios (1:1, 16:9, 21:9, etc.)
-- Returns width and height values
+Dynamic LoRA selection powered by a single configurable node:
 
-### String Splitter Node
+- Drive LoRA choice via API-friendly widget data
+- Unlimited rows with custom strengths managed from the UI
+- Keeps workflows simpler than juggling fixed 10/20/40 variants
+
+### GPT Image 1 (Direct API)
+
+Generate or edit images through OpenAI's image API:
+
+- Text-to-image generation
+- Optional image and mask inputs for edits
+- Quality, size, moderation, and transparent background options
+- Environment variable fallback via `OPENAI_API_KEY`
+
+### Easy Aspect Ratio
+
+Select common image ratios and output ratio text, width, and height.
+
+### String Splitter
+
 Split text into multiple outputs:
+
 - Up to 10 separate outputs
 - Customizable separator
-
-### LoRA Switcher Node
-Efficient LoRA switch made for API use:
-- Switch between up to 40 LoRAs in a single node (10, 20, 40)
-- Dynamic LoRA switcher for maximum flexibility
-- Fine-tune strength
-
-### Image Overlay Node (Beta 🚧)
-Combine images with precision:
-
-**Current Features**
-- Basic image compositing
-- Position control (X/Y)
-- Transparency adjustment
-- Auto size matching
-- Alpha channel support
-
-**Coming Soon**
-- Advanced positioning
-- Transform controls
-- Multiple blend modes
-- Layer management
-- Interactive preview
 
 ## Installation
 
 First navigate to your ComfyUI installation custom nodes directory.
 
 1. Clone this repository:
+
 ```bash
 git clone https://github.com/oshtz/ComfyUI-oshtz-nodes.git
 ```
 
 2. Install the required dependencies:
+
 ```bash
 cd ComfyUI-oshtz-nodes
 pip install -r requirements.txt
 ```
 
 ## Requirements
+
 - requests
-- torch
 - pydantic
 - Pillow
-- boto3 (>= 1.34.101)
+- numpy
+
+ComfyUI provides the runtime tensor and image stack used by the nodes.
 
 ## License
+
 This project is open-source and available under the MIT License.

@@ -1,5 +1,3 @@
-import torch
-
 class StringSplitterNode:
     TITLE = "String Splitter"
     CATEGORY = "oshtz Nodes"

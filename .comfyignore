@@ -1,0 +1,7 @@
+node.zip
+__pycache__/
+nodes/__pycache__/
+*.py[cod]
+.git/
+.github/
+tests/

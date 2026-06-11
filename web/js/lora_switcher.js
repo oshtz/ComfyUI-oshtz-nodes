@@ -1,9 +1,5 @@
 import { app } from "../../../../scripts/app.js";
-import { $el } from "../../../../scripts/ui.js";
 import { api } from "../../../../scripts/api.js";
-
-// Store the app instance
-let OshtzApp = null;
 
 // Store fetched LoRA names
 let LORA_NAMES = ["None"];
@@ -50,63 +46,6 @@ function getLoraConfigFromWidgets(node) {
         }
     }
     return config;
-}
-
-// Helper function to find the hidden config input/widget more reliably
-function findHiddenConfigWidget(node) {
-    // 1. Check node.properties first (Common for hidden/internal data)
-    if (node.properties && node.properties.hasOwnProperty("lora_config")) {
-            // Return a mock widget object that interacts with node.properties
-            return {
-            name: "lora_config",
-            type: "HIDDEN_PROPERTY", // Custom type to indicate source
-            _node: node, // Store reference to the node
-            get value() {
-                return this._node.properties["lora_config"];
-            },
-            set value(newValue) {
-                this._node.properties["lora_config"] = newValue;
-                // Optionally trigger serialization or update if needed
-                // node.setDirtyCanvas(true, true); // Example: Mark canvas dirty
-            },
-            // Add other methods/properties if needed by the caller, e.g., serializeValue
-            serializeValue: function() {
-                return this.value;
-            }
-        };
-    }
-
-    // 2. Check widgets array directly by name (Original Step 1)
-    let configWidget = node.widgets?.find((w) => w.name === "lora_config");
-    if (configWidget) {
-        return configWidget;
-    }
-
-    // 3. Check if it's represented as an input link (Original Step 2)
-    const configInput = node.inputs?.find((i) => i.name === "lora_config");
-    if (configInput) {
-        // If linked, the widget might still be in node.widgets, find by name again or linked widget name
-        configWidget = node.widgets?.find((w) => w.name === "lora_config" || (configInput.widget && w.name === configInput.widget.name));
-        if (configWidget) {
-            return configWidget;
-        }
-    }
-
-    // 4. Final check: Find any widget named "lora_config" (Original Step 3)
-    configWidget = node.widgets?.find((w) => w.name === "lora_config");
-    if (configWidget) {
-        return configWidget;
-    }
-
-    // 5. Check specifically for a widget of type 'hidden' (less common but possible)
-    configWidget = node.widgets?.find((w) => w.type?.toLowerCase() === "hidden" && w.name === "lora_config");
-    if (configWidget) {
-        return configWidget;
-    }
-
-    // If not found after all checks, log and return null
-    console.error("[LoraSwitcherDynamic] findHiddenConfigWidget could not find the 'lora_config' widget/property."); // Use error log
-    return null;
 }
 
 // Helper to update the hidden config input
@@ -368,23 +307,16 @@ function addStandardWidgets(node) {
     return buttonWidget;
 }
 
-// Ensure LoRA names are loaded on startup
-fetchLoraNames().catch(err => {
-    console.error("[LoraSwitcherDynamic] Failed to fetch initial LoRA list:", err);
-});
-
 // Register the extension
 app.registerExtension({
     name: "oshtz.LoraSwitcherDynamic",
-    async beforeRegisterNodeDef(nodeType, nodeData, appInstance) {
-        // Store the app instance for later use in widget handlers
-        OshtzApp = appInstance;
-        
-        // Store LoRA names in the extension for global access
-        this.lora_names = await fetchLoraNames().catch(() => ["None"]);
-
+    async beforeRegisterNodeDef(nodeType, nodeData) {
         // Check if the node type matches
-        if (nodeData.name === 'LoraSwitcherDynamic') {
+        const comfyClass = nodeType.comfyClass || nodeData.name;
+        if (comfyClass === 'LoraSwitcherDynamic') {
+            // Store LoRA names in the extension for global access
+            this.lora_names = await fetchLoraNames().catch(() => ["None"]);
+
             // --- Modify onNodeCreated ---
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
@@ -558,14 +490,6 @@ app.registerExtension({
                 // REMOVED: Logic that searched for lora_config widget and manually set properties.
                 // This is now handled correctly by updateHiddenConfig directly modifying node.properties.
                 // ComfyUI's default serialization will save node.properties.
-            }
-
-            // --- Keep nodeCreated callback ---
-            nodeType.prototype.nodeCreated = function(node, app) {
-                if (node.constructor.nodeData.name === "LoraSwitcherDynamic") {
-                    // Initial update might be useful if properties aren't loaded yet
-                    // updateHiddenConfig(node);
-                }
             }
         }
     },
