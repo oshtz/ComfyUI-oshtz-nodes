@@ -20,6 +20,6 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Publish Custom Node
-        uses: Comfy-Org/publish-node-action@main
+        uses: Comfy-Org/publish-node-action@d2366e7abb6ab16f3bb03e3520ae25c8cf749bc9
         with:
           personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
